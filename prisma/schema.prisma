@@ -1,0 +1,27 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String   // Будем хешировать
+  voiceType String   @default("robot")
+  nLevel    Int      @default(1) // Текущий уровень сложности (N)
+  createdAt DateTime @default(now())
+  sessions  GameSession[]
+}
+
+model GameSession {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  playedAt  DateTime @default(now())
+  nLevel    Int
+  score     Int      // Процент точности (0-100)
+}
