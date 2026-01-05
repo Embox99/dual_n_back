@@ -1,20 +1,23 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { playSound, LETTERS } from "../utils/audioUtils";
 
 export type GameStep = {
   position: number;
   letter: string;
 };
 
-const LETTERS = ["A", "B", "C", "H", "K", "L", "M", "Q", "R", "S"];
-
-export const useDualNBack = (nLevel: number = 2, speedMs: number = 2500) => {
+export const useDualNBack = (
+  nLevel: number = 2,
+  speedMs: number = 2500,
+  maxRounds: number = 40
+) => {
   const [isPlaying, setIsPlaying] = useState(false);
+
+  const [rounds, setRounds] = useState(0);
+  const [score, setScore] = useState(0);
+  const [matches, setMatches] = useState({ pos: 0, audio: 0 });
   const [history, setHistory] = useState<GameStep[]>([]);
   const [currentStep, setCurrentStep] = useState<GameStep | null>(null);
-
-  const [score, setScore] = useState(0);
-  const [rounds, setRounds] = useState(0);
-  const [matches, setMatches] = useState({ pos: 0, audio: 0 });
 
   const [feedback, setFeedback] = useState<{
     pos?: "correct" | "wrong" | "missed";
@@ -23,9 +26,12 @@ export const useDualNBack = (nLevel: number = 2, speedMs: number = 2500) => {
 
   const historyRef = useRef<GameStep[]>([]);
   const userAnswersRef = useRef({ pos: false, audio: false });
+  const roundsRef = useRef(0);
 
   const generateStep = useCallback(() => {
     const shouldForcePos =
+      Math.random() < 0.3 && historyRef.current.length >= nLevel;
+    const shouldForceAudio =
       Math.random() < 0.3 && historyRef.current.length >= nLevel;
 
     let position = Math.floor(Math.random() * 9);
@@ -34,43 +40,103 @@ export const useDualNBack = (nLevel: number = 2, speedMs: number = 2500) => {
         historyRef.current[historyRef.current.length - nLevel].position;
     }
 
-    const letter = LETTERS[Math.floor(Math.random() * LETTERS.length)];
+    let letter = LETTERS[Math.floor(Math.random() * LETTERS.length)];
+    if (shouldForceAudio) {
+      letter = historyRef.current[historyRef.current.length - nLevel].letter;
+    }
+
     return { position, letter };
   }, [nLevel]);
 
+  const stopGame = useCallback(() => {
+    setIsPlaying(false);
+    setCurrentStep(null);
+    window.speechSynthesis.cancel();
+  }, []);
+
   const gameTick = useCallback(() => {
+    if (roundsRef.current >= maxRounds) {
+      stopGame();
+      return;
+    }
+
     const currentHistory = historyRef.current;
+
+    let deltaScore = 0;
+    let nextFeedbackPos: "correct" | "wrong" | "missed" | undefined = undefined;
+    let nextFeedbackAudio: "correct" | "wrong" | "missed" | undefined =
+      undefined;
+
+    let newPosMatchCount = 0;
+    let newAudioMatchCount = 0;
 
     if (currentHistory.length > nLevel) {
       const actualStep = currentHistory[currentHistory.length - 1];
-
       const targetStep = currentHistory[currentHistory.length - 1 - nLevel];
 
       const isPosMatch = targetStep.position === actualStep.position;
       const isAudioMatch = targetStep.letter === actualStep.letter;
-      const { pos: userPos, audio: userAudio } = userAnswersRef.current;
+      const { pos: userPressedPos, audio: userPressedAudio } =
+        userAnswersRef.current;
 
-      if (isPosMatch) setMatches((m) => ({ ...m, pos: m.pos + 1 }));
-      if (isAudioMatch) setMatches((m) => ({ ...m, audio: m.audio + 1 }));
+      if (isPosMatch) newPosMatchCount = 1;
+      if (isAudioMatch) newAudioMatchCount = 1;
 
-      let roundScore = 0;
-
-      if (userPos) {
-        if (isPosMatch) roundScore += 100;
-        else roundScore -= 50;
+      if (isPosMatch) {
+        if (userPressedPos) {
+          deltaScore += 100;
+          nextFeedbackPos = "correct";
+        } else {
+          deltaScore -= 50;
+          nextFeedbackPos = "missed";
+        }
+      } else {
+        if (userPressedPos) {
+          deltaScore -= 50;
+          nextFeedbackPos = "wrong";
+        }
       }
 
-      if (userAudio) {
-        if (isAudioMatch) roundScore += 100;
-        else roundScore -= 50;
+      if (isAudioMatch) {
+        if (userPressedAudio) {
+          deltaScore += 100;
+          nextFeedbackAudio = "correct";
+        } else {
+          deltaScore -= 50;
+          nextFeedbackAudio = "missed";
+        }
+      } else {
+        if (userPressedAudio) {
+          deltaScore -= 50;
+          nextFeedbackAudio = "wrong";
+        }
       }
+    }
 
-      setScore((s) => s + roundScore);
+    if (deltaScore !== 0) {
+      setScore((prev) => prev + deltaScore);
+    }
+
+    if (newPosMatchCount > 0 || newAudioMatchCount > 0) {
+      setMatches((prev) => ({
+        pos: prev.pos + newPosMatchCount,
+        audio: prev.audio + newAudioMatchCount,
+      }));
+    }
+
+    if (nextFeedbackPos || nextFeedbackAudio) {
+      setFeedback({
+        pos: nextFeedbackPos,
+        audio: nextFeedbackAudio,
+      });
+    } else {
+      setFeedback({});
     }
 
     userAnswersRef.current = { pos: false, audio: false };
-    setFeedback({});
-    setRounds((r) => r + 1);
+
+    roundsRef.current += 1;
+    setRounds(roundsRef.current);
 
     const newStep = generateStep();
     const newHistory = [...currentHistory, newStep];
@@ -78,11 +144,8 @@ export const useDualNBack = (nLevel: number = 2, speedMs: number = 2500) => {
     setHistory(newHistory);
     setCurrentStep(newStep);
 
-    const utterance = new SpeechSynthesisUtterance(newStep.letter);
-    utterance.rate = 1.5;
-    utterance.lang = "en-US";
-    window.speechSynthesis.speak(utterance);
-  }, [nLevel, generateStep]);
+    playSound(newStep.letter);
+  }, [nLevel, generateStep, maxRounds, stopGame]);
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -96,21 +159,20 @@ export const useDualNBack = (nLevel: number = 2, speedMs: number = 2500) => {
     historyRef.current = [];
     setScore(0);
     setRounds(0);
+    roundsRef.current = 0;
     setMatches({ pos: 0, audio: 0 });
+    setFeedback({});
     setIsPlaying(true);
   };
 
-  const stopGame = () => {
-    setIsPlaying(false);
-    setCurrentStep(null);
-  };
-
   const checkPositionMatch = () => {
+    if (userAnswersRef.current.pos) return;
     userAnswersRef.current.pos = true;
     setFeedback((prev) => ({ ...prev, pos: "correct" }));
   };
 
   const checkAudioMatch = () => {
+    if (userAnswersRef.current.audio) return;
     userAnswersRef.current.audio = true;
     setFeedback((prev) => ({ ...prev, audio: "correct" }));
   };
@@ -120,6 +182,7 @@ export const useDualNBack = (nLevel: number = 2, speedMs: number = 2500) => {
     currentStep,
     score,
     rounds,
+    matches,
     feedback,
     startGame,
     stopGame,
