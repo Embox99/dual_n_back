@@ -1,6 +1,6 @@
 <h1 align="center">Dual N Back Game</h1>
 
-![App Demo](/frontend/public/dual_n_back-main.png)
+![App Demo](/public/dual_n_back-main.png)
 
 ### Key Features
 
