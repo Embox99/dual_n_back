@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { playSound, LETTERS } from "../utils/audioUtils";
+import { playSound, LETTERS } from "../utils/audioUtils"; // Проверь этот путь, если у тебя папка называется иначе (например ../audioUtils)
 
 export type GameStep = {
   position: number;
@@ -153,6 +153,42 @@ export const useDualNBack = (
     const intervalId = setInterval(gameTick, speedMs);
     return () => clearInterval(intervalId);
   }, [isPlaying, speedMs, gameTick]);
+
+  useEffect(() => {
+    console.log(
+      `[Save Check] isPlaying: ${isPlaying}, Rounds played: ${rounds}`
+    );
+
+    if (!isPlaying && rounds >= 1) {
+      console.log(" Game finished! Sending data to server...");
+
+      const saveData = async () => {
+        try {
+          const res = await fetch("/api/save-game", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              nLevel,
+              rounds,
+              score,
+              matches,
+            }),
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            console.log("SAVE SUCCESSFUL:", data);
+          } else {
+            console.error("SERVER ERROR:", await res.text());
+          }
+        } catch (err) {
+          console.error("NETWORK ERROR:", err);
+        }
+      };
+
+      saveData();
+    }
+  }, [isPlaying]);
 
   const startGame = () => {
     setHistory([]);

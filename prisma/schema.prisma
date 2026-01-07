@@ -10,18 +10,27 @@ datasource db {
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
-  password  String   // Будем хешировать
+  password  String   
   voiceType String   @default("robot")
-  nLevel    Int      @default(1) // Текущий уровень сложности (N)
+  nLevel    Int      @default(1)
   createdAt DateTime @default(now())
+  
   sessions  GameSession[]
 }
 
 model GameSession {
   id        String   @id @default(uuid())
+  
   userId    String
   user      User     @relation(fields: [userId], references: [id])
+  
   playedAt  DateTime @default(now())
+  
   nLevel    Int
-  score     Int      // Процент точности (0-100)
+  rounds    Int  
+  score     Int      
+  accuracy  Int      
+  
+  matchesPos   Int 
+  matchesAudio Int 
 }
